@@ -87,10 +87,34 @@ def main(args):
 
     vis_pc(pc, bboxes=lidar_bboxes, labels=labels)
 
+    cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+    cv2.waitKey(0)
+
     if calib_info is not None and img is not None:
         bboxes2d, camera_bboxes = result_filter['bboxes2d'], result_filter['camera_bboxes']
         bboxes_corners = bbox3d2corners_camera(camera_bboxes)
         image_points = points_camera2image(bboxes_corners, P2)
+
+        car_indices_list = list(
+            filter(lambda x: labels[x] == 2, range(len(labels))))
+
+        for index in car_indices_list:
+            coords = bboxes2d[index].astype(int)
+            crop_img = img[coords[1]:coords[3], coords[0]:coords[2]]
+            crop_img_height = len(crop_img)
+            crop_img_width = len(crop_img[0])
+            if crop_img_height > crop_img_width:
+                padding = (int)((crop_img_height-crop_img_width)/2)
+                crop_img = cv2.copyMakeBorder(
+                    crop_img, 0, 0, padding, padding, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+            else:
+                padding = (int)((crop_img_width-crop_img_height)/2)
+                crop_img = cv2.copyMakeBorder(
+                    crop_img, padding, padding, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+            dim = (224, 244)
+            crop_img = cv2.resize(crop_img, dim, interpolation=cv2.INTER_CUBIC)
+            cv2.imshow("cropped", crop_img)
+            cv2.waitKey(0)
         img = vis_img_3d(img, image_points, labels, rt=True)
 
     if calib_info is not None and gt_label is not None:
@@ -119,11 +143,16 @@ def main(args):
         pred_gt_labels = np.concatenate([labels, gt_labels])
         vis_pc(pc, pred_gt_lidar_bboxes, labels=pred_gt_labels)
 
+        cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+
         if img is not None:
             bboxes_corners = bbox3d2corners_camera(bboxes_camera)
             image_points = points_camera2image(bboxes_corners, P2)
             gt_labels = [-1] * len(gt_label['name'])
             img = vis_img_3d(img, image_points, gt_labels, rt=True)
+
+    cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+    cv2.waitKey(0)
 
     if calib_info is not None and img is not None:
         cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
@@ -141,4 +170,6 @@ if __name__ == '__main__':
     parser.add_argument('--img_path', default='', help='your image path')
     parser.add_argument('--no_cuda', action='store_true',
                         help='whether to use cuda')
+    args = parser.parse_args()
+    print(args)
     main(args)
