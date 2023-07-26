@@ -28,15 +28,12 @@ def point_range_filter(pts, point_range=[0, -39.68, -3, 69.12, 39.68, 1]):
     return pts
 
 
-def main(args):
+def setup(args):
     CLASSES = {
         'Pedestrian': 0,
         'Cyclist': 1,
         'Car': 2
     }
-    LABEL2CLASSES = {v: k for k, v in CLASSES.items()}
-    pcd_limit_range = np.array([0, -40, -3, 70.4, 40, 0.0], dtype=np.float32)
-
     if not args.no_cuda:
         model = PointPillars(nclasses=len(CLASSES)).cuda()
         model.load_state_dict(torch.load(args.ckpt))
@@ -45,13 +42,25 @@ def main(args):
         model.load_state_dict(
             torch.load(args.ckpt, map_location=torch.device('cpu')))
 
-    if not os.path.exists(args.pc_path):
+    return model
+
+
+def test_img(args, pc_path, calib_path, img_path, model):
+    CLASSES = {
+        'Pedestrian': 0,
+        'Cyclist': 1,
+        'Car': 2
+    }
+    LABEL2CLASSES = {v: k for k, v in CLASSES.items()}
+    pcd_limit_range = np.array([0, -40, -3, 70.4, 40, 0.0], dtype=np.float32)
+
+    if not os.path.exists(pc_path):
         raise FileNotFoundError
-    pc = read_points(args.pc_path)
+    pc = read_points(pc_path)
     pc = point_range_filter(pc)
     pc_torch = torch.from_numpy(pc)
-    if os.path.exists(args.calib_path):
-        calib_info = read_calib(args.calib_path)
+    if os.path.exists(calib_path):
+        calib_info = read_calib(calib_path)
     else:
         calib_info = None
 
@@ -60,8 +69,8 @@ def main(args):
     else:
         gt_label = None
 
-    if os.path.exists(args.img_path):
-        img = cv2.imread(args.img_path, 1)
+    if os.path.exists(img_path):
+        img = cv2.imread(img_path, 1)
     else:
         img = None
 
@@ -113,8 +122,11 @@ def main(args):
                     crop_img, padding, padding, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
             dim = (224, 244)
             crop_img = cv2.resize(crop_img, dim, interpolation=cv2.INTER_CUBIC)
+            # FEED INTO EMERGENCY VEHICLE DETECTION NETWORK
             cv2.imshow("cropped", crop_img)
             cv2.waitKey(0)
+
+        # places boxes on image
         img = vis_img_3d(img, image_points, labels, rt=True)
 
     if calib_info is not None and gt_label is not None:
@@ -157,6 +169,21 @@ def main(args):
     if calib_info is not None and img is not None:
         cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
         cv2.waitKey(0)
+
+
+def main(args):
+    model = setup(args)
+
+    dir_path = '../kitti/testing/'
+    pc_path_list = os.listdir(dir_path+'velodyne_reduced')
+    calib_path_list = os.listdir(dir_path+'calib')
+    img_path_list = os.listdir(dir_path+'image_2')
+
+    for (pc_path, calib_path, img_path) in zip(pc_path_list, calib_path_list, img_path_list):
+        pc_path = dir_path+'velodyne_reduced/'+pc_path
+        calib_path = dir_path+'calib/'+calib_path
+        img_path = dir_path+'image_2/'+img_path
+        test_img(args, pc_path, calib_path, img_path, model)
 
 
 if __name__ == '__main__':
