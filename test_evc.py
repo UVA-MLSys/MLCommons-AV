@@ -11,6 +11,8 @@ from utils import setup_seed, read_points, read_calib, read_label, \
     bbox_camera2lidar
 from model import PointPillars
 
+from emergency_vehicle_classification import EV_research as evc
+
 
 def point_range_filter(pts, point_range=[0, -39.68, -3, 69.12, 39.68, 1]):
     '''
@@ -29,6 +31,8 @@ def point_range_filter(pts, point_range=[0, -39.68, -3, 69.12, 39.68, 1]):
 
 
 def setup(args):
+    evc_model = evc.load_trained_model()
+
     CLASSES = {
         'Pedestrian': 0,
         'Cyclist': 1,
@@ -42,10 +46,10 @@ def setup(args):
         model.load_state_dict(
             torch.load(args.ckpt, map_location=torch.device('cpu')))
 
-    return model
+    return model, evc_model
 
 
-def test_img(args, pc_path, calib_path, img_path, model):
+def test_img(args, pc_path, calib_path, img_path, model, evc_model):
     CLASSES = {
         'Pedestrian': 0,
         'Cyclist': 1,
@@ -94,7 +98,7 @@ def test_img(args, pc_path, calib_path, img_path, model):
     lidar_bboxes = result_filter['lidar_bboxes']
     labels, scores = result_filter['labels'], result_filter['scores']
 
-    vis_pc(pc, bboxes=lidar_bboxes, labels=labels)
+    #vis_pc(pc, bboxes=lidar_bboxes, labels=labels)
 
     cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
     cv2.waitKey(0)
@@ -120,9 +124,10 @@ def test_img(args, pc_path, calib_path, img_path, model):
                 padding = (int)((crop_img_width-crop_img_height)/2)
                 crop_img = cv2.copyMakeBorder(
                     crop_img, padding, padding, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-            dim = (224, 244)
+            dim = (64, 64)
             crop_img = cv2.resize(crop_img, dim, interpolation=cv2.INTER_CUBIC)
             # FEED INTO EMERGENCY VEHICLE DETECTION NETWORK
+            print(evc.classify_image(evc_model, crop_img))
             cv2.imshow("cropped", crop_img)
             cv2.waitKey(0)
 
@@ -155,7 +160,7 @@ def test_img(args, pc_path, calib_path, img_path, model):
         pred_gt_labels = np.concatenate([labels, gt_labels])
         vis_pc(pc, pred_gt_lidar_bboxes, labels=pred_gt_labels)
 
-        cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+        cv2.imshow(f'{os.path.basename(img_path)}-3d bbox', img)
 
         if img is not None:
             bboxes_corners = bbox3d2corners_camera(bboxes_camera)
@@ -163,27 +168,28 @@ def test_img(args, pc_path, calib_path, img_path, model):
             gt_labels = [-1] * len(gt_label['name'])
             img = vis_img_3d(img, image_points, gt_labels, rt=True)
 
-    cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
-    cv2.waitKey(0)
-
     if calib_info is not None and img is not None:
-        cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+        cv2.imshow(f'{os.path.basename(img_path)}-3d bbox', img)
         cv2.waitKey(0)
 
 
 def main(args):
-    model = setup(args)
+    model, evc_model = setup(args)
 
     dir_path = '../kitti/testing/'
     pc_path_list = os.listdir(dir_path+'velodyne_reduced')
     calib_path_list = os.listdir(dir_path+'calib')
     img_path_list = os.listdir(dir_path+'image_2')
 
+    count = 0
+    total = len(img_path_list)
     for (pc_path, calib_path, img_path) in zip(pc_path_list, calib_path_list, img_path_list):
+        count += 1
+        print('Testing %d/%d' % (count, total))
         pc_path = dir_path+'velodyne_reduced/'+pc_path
         calib_path = dir_path+'calib/'+calib_path
         img_path = dir_path+'image_2/'+img_path
-        test_img(args, pc_path, calib_path, img_path, model)
+        test_img(args, pc_path, calib_path, img_path, model, evc_model)
 
 
 if __name__ == '__main__':
@@ -198,5 +204,5 @@ if __name__ == '__main__':
     parser.add_argument('--no_cuda', action='store_true',
                         help='whether to use cuda')
     args = parser.parse_args()
-    print(args)
+
     main(args)
