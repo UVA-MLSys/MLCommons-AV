@@ -31,7 +31,7 @@ def point_range_filter(pts, point_range=[0, -39.68, -3, 69.12, 39.68, 1]):
 
 
 def setup(args):
-    evc_model = evc.load_trained_model()
+    #evc_model = evc.load_trained_model()
 
     CLASSES = {
         'Pedestrian': 0,
@@ -46,10 +46,15 @@ def setup(args):
         model.load_state_dict(
             torch.load(args.ckpt, map_location=torch.device('cpu')))
 
-    return model, evc_model
+    return model
 
 
-def test_img(args, pc_path, calib_path, img_path, model, evc_model):
+def test_img(args, pc_path, calib_path, img_path, model):
+    dir_path = '../kitti/testing/'
+    pc_path = dir_path+'velodyne_reduced/'+pc_path
+    calib_path = dir_path+'calib/'+calib_path
+    img_name = img_path
+    img_path = dir_path+'image_2/'+img_path
     CLASSES = {
         'Pedestrian': 0,
         'Cyclist': 1,
@@ -98,10 +103,10 @@ def test_img(args, pc_path, calib_path, img_path, model, evc_model):
     lidar_bboxes = result_filter['lidar_bboxes']
     labels, scores = result_filter['labels'], result_filter['scores']
 
-    #vis_pc(pc, bboxes=lidar_bboxes, labels=labels)
+    vis_pc(pc, bboxes=lidar_bboxes, labels=labels)
 
-    cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
-    cv2.waitKey(0)
+    # cv2.imshow(f'{os.path.basename(args.img_path)}-3d bbox', img)
+    # cv2.waitKey(0)
 
     if calib_info is not None and img is not None:
         bboxes2d, camera_bboxes = result_filter['bboxes2d'], result_filter['camera_bboxes']
@@ -110,7 +115,9 @@ def test_img(args, pc_path, calib_path, img_path, model, evc_model):
 
         car_indices_list = list(
             filter(lambda x: labels[x] == 2, range(len(labels))))
-
+        car_count = 0
+        directory = '..\pointpillars_car_images'
+        os.chdir(directory)
         for index in car_indices_list:
             coords = bboxes2d[index].astype(int)
             crop_img = img[coords[1]:coords[3], coords[0]:coords[2]]
@@ -124,12 +131,15 @@ def test_img(args, pc_path, calib_path, img_path, model, evc_model):
                 padding = (int)((crop_img_width-crop_img_height)/2)
                 crop_img = cv2.copyMakeBorder(
                     crop_img, padding, padding, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-            dim = (64, 64)
+            dim = (224, 224)
             crop_img = cv2.resize(crop_img, dim, interpolation=cv2.INTER_CUBIC)
             # FEED INTO EMERGENCY VEHICLE DETECTION NETWORK
-            print(evc.classify_image(evc_model, crop_img))
+            filename = 'image_'+img_name.split(
+                '.')[0]+'_car_'+str(car_count).rjust(2, '0')+'.png'
+            #cv2.imwrite(filename, crop_img)
             cv2.imshow("cropped", crop_img)
             cv2.waitKey(0)
+            car_count += 1
 
         # places boxes on image
         img = vis_img_3d(img, image_points, labels, rt=True)
@@ -160,8 +170,6 @@ def test_img(args, pc_path, calib_path, img_path, model, evc_model):
         pred_gt_labels = np.concatenate([labels, gt_labels])
         vis_pc(pc, pred_gt_lidar_bboxes, labels=pred_gt_labels)
 
-        cv2.imshow(f'{os.path.basename(img_path)}-3d bbox', img)
-
         if img is not None:
             bboxes_corners = bbox3d2corners_camera(bboxes_camera)
             image_points = points_camera2image(bboxes_corners, P2)
@@ -174,7 +182,7 @@ def test_img(args, pc_path, calib_path, img_path, model, evc_model):
 
 
 def main(args):
-    model, evc_model = setup(args)
+    model = setup(args)
 
     dir_path = '../kitti/testing/'
     pc_path_list = os.listdir(dir_path+'velodyne_reduced')
@@ -185,11 +193,10 @@ def main(args):
     total = len(img_path_list)
     for (pc_path, calib_path, img_path) in zip(pc_path_list, calib_path_list, img_path_list):
         count += 1
+        # if count < 2754:
+        #     continue
         print('Testing %d/%d' % (count, total))
-        pc_path = dir_path+'velodyne_reduced/'+pc_path
-        calib_path = dir_path+'calib/'+calib_path
-        img_path = dir_path+'image_2/'+img_path
-        test_img(args, pc_path, calib_path, img_path, model, evc_model)
+        test_img(args, pc_path, calib_path, img_path, model)
 
 
 if __name__ == '__main__':
